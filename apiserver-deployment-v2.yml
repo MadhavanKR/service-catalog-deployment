@@ -1,0 +1,100 @@
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: catalog-catalog-apiserver
+  labels:
+    app: release-name-catalog-apiserver
+    chart: "catalog-0.2.0"
+    release: "release-name"
+    heritage: "Tiller"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  minReadySeconds: 1
+  selector:
+    matchLabels:
+      app: catalog-catalog-apiserver
+  template:
+    metadata:
+      labels:
+        app: catalog-catalog-apiserver
+        chart: "catalog-0.2.0"
+        release: "release-name"
+        releaseRevision: "0"
+        heritage: "Tiller"
+      
+    spec:        
+      serviceAccountName: "service-catalog-apiserver"
+      containers:
+      - name: apiserver
+        image: quay.io/kubernetes-service-catalog/service-catalog:v0.2.0
+        imagePullPolicy: Always
+        resources:
+          limits:
+            cpu: 100m
+            memory: 50Mi
+          requests:
+            cpu: 100m
+            memory: 40Mi
+          
+        args:
+        - apiserver
+        
+        - --enable-admission-plugins
+        - "NamespaceLifecycle,DefaultServicePlan,ServiceBindingsLifecycle,ServicePlanChangeValidator,BrokerAuthSarCheck"
+        - --secure-port
+        - "8443"
+        - --etcd-servers
+        - https://10.0.0.201:2379
+        - -v
+        - "10"
+        - --feature-gates
+        - OriginatingIdentity=true
+        - --feature-gates
+        - ServicePlanDefaults=false
+        - --etcd-cafile=/var/run/etcd-client/etcd-client-ca.crt
+        - --etcd-certfile=/var/run/etcd-client/etcd-client.crt
+        - --etcd-keyfile=/var/run/etcd-client/etcd-client.key
+        ports:
+        - containerPort: 8443
+        volumeMounts:
+        - name: apiserver-cert
+          mountPath: /var/run/kubernetes-service-catalog
+          readOnly: true
+        - name: etcd-client-cert
+          mountPath: /var/run/etcd-client
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            port: 8443
+            path: /healthz/ready
+            scheme: HTTPS
+          failureThreshold: 1
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            port: 8443
+            path: /healthz
+            scheme: HTTPS
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+      
+      volumes:
+      - name: apiserver-cert
+        secret:
+          secretName: catalog-catalog-apiserver-cert
+          items:
+          - key: tls.crt
+            path: apiserver.crt
+          - key: tls.key
+            path: apiserver.key
+      - name: etcd-client-cert
+        secret:
+          secretName: etcd-tls-secret
